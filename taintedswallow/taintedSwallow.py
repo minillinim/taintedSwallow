@@ -38,7 +38,7 @@ __status__ = "Dev"
 ###############################################################################
 ###############################################################################
 
-
+import numpy as np
 
 ###############################################################################
 ###############################################################################
@@ -90,7 +90,6 @@ class TSUtilityClass():
         self.parseContigs(contigFileName2)
         self.parseCoords(nucmerFileName)
         self.processLinks()
-        self.printLinks()
 
     def parseContigs(self, contigFileName):
         """Parse the contigs
@@ -296,13 +295,50 @@ class ContigLinker:
         # delete any useless links
         for intID in dead_uns:
             del self.links[intID]
-        
-        # now go through all the links for this guy and work out which ones are
+
+        # force each match to sit at only one position
+        # keep the longest one...
+        for intID in self.links:
+            current_link = self.links[intID][0]
+            l_len = 0
+            best_link = current_link 
+            while(current_link is not None):
+                if len(current_link) > l_len:
+                    l_len = len(current_link)
+                    best_link =  current_link
+                current_link = current_link.nextLink
+            best_link.nextLink = None
+            self.links[intID][0] = best_link
+    
+        # each link should now only have one contig
+        # sort the linking contigs in order of start point
+        # go through all the links for this guy and work out which ones are
         # the best representative for each region in the host
-        current_link = self.links[intID][0] 
-        while(current_link is not None):
-            current_link = current_link.nextLink
-        
+        ordered_IDs = np.array(self.links.keys())
+        num_links = len(ordered_IDs)
+        dead_uns = []
+        if len(ordered_IDs) > 1:
+            starts = [self.links[x][0].thisStart for x in ordered_IDs]
+            sorted_starts = np.argsort(starts)
+            # no point sorting single lists
+            ignore_next = False 
+            for link_count in np.arange(num_links -1):
+                if not ignore_next:
+                    link_1 = self.links[ordered_IDs[sorted_starts][link_count]][0]
+                    link_2 = self.links[ordered_IDs[sorted_starts][link_count+1]][0]
+                    overlap = link_1.thisEnd - link_2.thisStart 
+                    if overlap > 100:
+                        # there is a problem!
+                        if len(link_2) < 2000:
+                            # link_2 gotta go!
+                            dead_uns.append(ordered_IDs[sorted_starts][link_count+1])
+                            ignore_next = True
+                else:
+                    ignore_next = False
+
+        # delete any useless links
+        for intID in dead_uns:
+            del self.links[intID]
 
     def printLinks(self, nameDict=None):
         """printing!"""
@@ -312,8 +348,13 @@ class ContigLinker:
             print "BASE: %d (%d bp)" % (self.ID, self.contigLength)
         else:
             print "BASE: %s (%d bp)" % (nameDict[self.ID], self.contigLength)
-        
-        for intID in self.links:
+
+        ordered_IDs = np.array(self.links.keys())
+        num_links = len(ordered_IDs)
+        starts = [self.links[x][0].thisStart for x in ordered_IDs]
+        sorted_starts = np.argsort(starts)
+        for link_count in np.arange(num_links -1):
+            intID = ordered_IDs[sorted_starts][link_count]
             print "..............................................................................."        
             if nameDict is None:
                 print "LINK: %d (%d bp)" % (intID, self.links[intID][1])
@@ -338,6 +379,10 @@ class contigLink:
         self.thatEnd = thatEnd
         self.identity = identity
         self.nextLink = nextLink
+
+    def __len__(self):
+        """length of overlap on this"""
+        return self.thisEnd - self.thisStart + 1
         
     def __str__(self):
         """print statement"""

@@ -53,7 +53,8 @@ def doWork(args):
     """Wrapper function to allow easy profiling"""
     # hook into core project code here. For example:
     TSU = TSUtilityClass()
-    TSU.marryContigs(args.contig1, args.contig2, args.coords, identity=float(args.identity)/100.)     
+    TSU.marryContigs(args.contig1, args.contig2, args.coords, identity=float(args.identity)/100.)   
+    TSU.printLinks()
 
 ###############################################################################
 ###############################################################################
