@@ -49,33 +49,42 @@ class TSUtilityClass():
     """Utilities wrapper"""
     def __init__(self):
         self.contigs = {}
-        self.contigString2Int = {}
-        self.contigInt2String = {}
-        self.contigIDCounter = 0
+        
+        # use token to represent string based IDs
+        self.IDString2Int = {"NONE":0}
+        self.IDInt2String = {0:"NONE"}
+        self.IDCounter = 0
+        
+        # binz
+        self.contigsProcessed = False
+        self.bin1Assignments = {}           # contigs assigned to each bin
+        self.bin2Assignments = {}
+        self.bin2BinLinkCounts = {}         # number of links shared between pairwise bins
+        self.perBinLinkCounts = {}          # number of links in total for each bin
     
     def getIntID(self,
-                 contigID):
-        """Get an integer-based contigID given a string-based contigID"""
+                 stringID):
+        """Get an integer-based ID given a string-based ID"""
         try:
             # seen before, second time try to store
-            intID = self.contigString2Int[contigID]
+            intID = self.IDString2Int[stringID]
             return intID
         except KeyError:
             # first time seen 
-            self.contigIDCounter += 1
+            self.IDCounter += 1
             # store in the hashes
-            self.contigString2Int[contigID] = self.contigIDCounter
-            self.contigInt2String[self.contigIDCounter] = contigID
-            return self.contigIDCounter
+            self.IDString2Int[stringID] = self.IDCounter
+            self.IDInt2String[self.IDCounter] = stringID
+            return self.IDCounter
     
     def getStringID(self,
-                    contigID):
-        """Get an integer-based contigID given a string-based contigID"""
+                    intID):
+        """Get an string-based ID given a integer-based ID"""
         try:
             # seen before, second time try to store
-            return self.contigInt2String[contigID]
+            return self.IDInt2String[intID]
         except KeyError:
-            print "ERROR: ID %d not in store" % contigID
+            print "ERROR: ID %d not in store" % intID
             raise 
      
     def marryContigs(self,
@@ -86,12 +95,80 @@ class TSUtilityClass():
         """Marry two sets of contigs to eachother
         
         High level workflow wrapper"""
-        self.parseContigs(contigFileName1)
-        self.parseContigs(contigFileName2)
+        self.parseContigs(contigFileName1, 1)
+        self.parseContigs(contigFileName2, 2)
         self.parseCoords(nucmerFileName)
         self.processLinks()
+        self.contigsProcessed = True
+        return 0
 
-    def parseContigs(self, contigFileName):
+    def marryBins(self, bins1, bins2):
+        """Try to marry bins to eachother based on contig links"""
+        if not self.contigsProcessed:
+            print "ERROR: You need to marry the contigs first"
+            return 1
+        
+        # parse the bins files!
+        self.parsebins(bins1, 1)
+        self.parsebins(bins2, 2)
+        
+        # work out the total amount of links available to each bin
+        # and the inter bin links
+        # for each bin in group 1
+        for int_bid in self.bin1Assignments:
+            self.perBinLinkCounts[int_bid] = 0
+            # for each contig in this bin
+            for int_cid in self.bin1Assignments[int_bid]:
+                self.perBinLinkCounts[int_bid] += len(self.contigs[int_cid][0].links)
+                linking_contigs = self.contigs[int_cid][0].links.keys()
+                # for each linking contig...
+                for link_int_cid in linking_contigs:
+                    link_int_bid = self.contigs[link_int_cid][3]
+                    key = self.makeLinkKey(link_int_bid, int_bid)
+                    try:
+                        self.bin2BinLinkCounts[key] += 1
+                    except KeyError:
+                        self.bin2BinLinkCounts[key] = 1
+        # and then group 2 
+        for int_bid in self.bin2Assignments:
+            self.perBinLinkCounts[int_bid] = 0
+            # for each contig in this bin
+            for int_cid in self.bin2Assignments[int_bid]:
+                self.perBinLinkCounts[int_bid] += len(self.contigs[int_cid][0].links)
+                linking_contigs = self.contigs[int_cid][0].links.keys()
+                for link_int_cid in linking_contigs:
+                    link_int_bid = self.contigs[link_int_cid][3]
+                    key = self.makeLinkKey(link_int_bid, int_bid)
+                    try:
+                        self.bin2BinLinkCounts[key] += 1
+                    except KeyError:
+                        self.bin2BinLinkCounts[key] = 1
+
+        self.buildBinGraph()
+
+    def parsebins(self, binsFileName, groupNumber):
+        """parse bin assignments"""
+        if groupNumber == 1:
+            ba = self.bin1Assignments
+        else:
+            ba = self.bin2Assignments
+            
+        with open(binsFileName, "r") as b_fh:
+            for line in b_fh:
+                [cid, bid] = line.rstrip().split('\t')
+                int_cid = self.getIntID(cid)
+                int_bid = self.getIntID(bid)
+                try:
+                    self.contigs[int_cid][3] = int_bid
+                    try:
+                        ba[int_bid].append(int_cid)
+                    except KeyError:
+                        ba[int_bid] = [int_cid]
+                except KeyError:
+                    print "ERROR: contig %s assigned to bin %s but not in contigs file!"
+                    return
+                
+    def parseContigs(self, contigFileName, groupNumber):
         """Parse the contigs
         
         contigFileNames should have exactly two entries
@@ -100,7 +177,7 @@ class TSUtilityClass():
         with open(contigFileName, "r") as c_fh:
             for cid, seq in CP.readFasta(c_fh):
                 ID = self.getIntID(cid)
-                self.contigs[ID] = (ContigLinker(ID, len(seq)), len(seq))  
+                self.contigs[ID] = [ContigLinker(ID, len(seq)), len(seq), groupNumber, 0]
                 
     def parseCoords(self, nucmerFileName):
         """parse the nucmer file"""    
@@ -136,12 +213,102 @@ class TSUtilityClass():
     def processLinks(self):
         """process all the links we've found"""
         for intID in self.contigs:
-            self.contigs[intID][0].processLinks(nameDict=self.contigInt2String)
+            self.contigs[intID][0].processLinks(nameDict=self.IDInt2String)
+        
+    def makeLinkKey(self, c1, c2):
+        """make a unique number from two ints"""
+        if c1 < c2:
+            return c2 * 10000000 + c1
+        else:
+            return c1 * 10000000 + c2
+
+    def splitLinkKey(self, key):
+        k1 = int(key/10000000)
+        k2 = key - k1 * 10000000 
+        return (k1, k2)
+
+    def buildBinGraph(self):
+        """Build a graph showing inter bin relationships"""
+        max_perc = 0
+        perc_save = {}
+        for b_key in self.bin2BinLinkCounts:
+            (k1, k2) = self.splitLinkKey(b_key)
+            if k1 != 0 and k2 != 0:
+                totes = (self.perBinLinkCounts[k1] + self.perBinLinkCounts[k2]) / 2.
+                perc = float(self.bin2BinLinkCounts[b_key]) / float(totes)
+                perc_save[b_key] = perc
+                if perc > max_perc:
+                    max_perc = perc
+
+        reducto = 3./ max_perc
+        
+        print "graph taintedSwallowBinLinks {"
+        print "    rankdir=LR;"
+        print "    ranksep=10;"
+        print "    subgraph bg_1 {"
+        print "        rank=\"same\";"
+        print "        node [shape=box,fixedsize=true,width=2];",  
+        for int_bid in self.bin1Assignments.keys():
+            print "        %s;" % self.getStringID(int_bid),
+        print   
+        print "    }"
+
+        print "    subgraph bg_2 {"
+        print "        rank=\"same\";"
+        print "        node [shape=box,fixedsize=true,width=2];",  
+        for int_bid in self.bin2Assignments.keys():
+            # add the prefix "GroopM_" here
+            print "        GroopM_%s;" % self.getStringID(int_bid),
+        print   
+        print "    }"
+        
+        for b_key in self.bin2BinLinkCounts:
+            (k1, k2) = self.splitLinkKey(b_key)
+            if k1 != 0 and k2 != 0:
+                # add the prefix "GroopM_" here too
+                s1 = self.getStringID(k1)
+                s2 = self.getStringID(k2)
+                if s1[0] == 'C':
+                    s2 = "GroopM_" + s2
+                else:
+                    s1 = "GroopM_" + s1
+                print "    %s -- %s [penwidth=%0.4f];" % (s1,
+                                                          s2,
+                                                          perc_save[b_key] * reducto)
+        print "};"
+        
+        
+    def buildLinkGraph(self):
+        """Run through the links and build a graphviz-type graph of contig associations"""
+        print "graph taintedSwallow {" 
+        # first print the node shapes
+        group1_nodes = []
+        group2_nodes = []
+        seen_links = {}
+        for intID in self.contigs:
+            if self.contigs[intID][2] == 1:
+                group1_nodes.append(intID)
+            else:
+                group2_nodes.append(intID)
+        print "node [shape=box,fixedsize=true,width=0.9];",  
+        for node in group1_nodes:
+            print "%d;" % node,  
+        print "node [shape=circle,fixedsize=true,width=0.9];",
+        for node in group2_nodes:
+            print "%d;" % node,  
+        for intID in self.contigs:
+            for link in self.contigs[intID][0].links.keys():
+                try:
+                    seen_links[self.makeLinkKey(intID, link)] += 1
+                except KeyError: 
+                    seen_links[self.makeLinkKey(intID, link)] = 1
+                    print "    %d -- %d;" % (intID, link)
+        print "};"
         
     def printLinks(self):
         """printing!"""
         for intID in self.contigs:
-            self.contigs[intID][0].printLinks(nameDict=self.contigInt2String)
+            self.contigs[intID][0].printLinks(nameDict=self.IDInt2String)
 
 ###############################################################################
 ###############################################################################
