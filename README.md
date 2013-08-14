@@ -10,9 +10,9 @@ Should be as simple as
 
     pip install taintedSwallow
 
-## Example usage
+## Example usage 1
 
-Still under dev, but if you run nucmer on a set of contigs and get coords ussing something like this:
+Still under dev, but if you run nucmer on a set of contigs and get coords using something like this:
 
     nucmer <fasta1> <fasta2> --mum --coords
     
@@ -62,6 +62,25 @@ TS munges the coords file and produces output which looks like this:
 In this example contig 1 form fasta 1 matches contig 1 from fasta 2; contig 2 from fasta 1 matches 4 contigs in fasta 2; contigs 3 in fasta 1 has no matches.
 
 But overall, this is a boring way to run this code. I mainly intend to use it as an api. Pydoc the code for more deets peeps.
+
+## Example usage 2
+
+You can make tab separated bin assignments files which have this format:
+
+    FASTA_1_CONTIG_ID_1	BIN_X
+    FASTA_1_CONTIG_ID_2	BIN_Y
+    FASTA_1_CONTIG_ID_3	BIN_Z
+    FASTA_1_CONTIG_ID_4	BIN_X
+    ...
+
+You can run TS like this:
+
+    taintedSwallow <fasta1> <fasta2> out.coords --bins1 <bins1> --bins2 <bins2>
+
+And then TS will produce graphviz style dot output which maps links between bins. This graph is useful to see how bins are related to eachother.
+
+## Example usage 3
+
 
 ## Help
 

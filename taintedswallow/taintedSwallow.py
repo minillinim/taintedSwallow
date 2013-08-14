@@ -257,23 +257,15 @@ class TSUtilityClass():
         print "        rank=\"same\";"
         print "        node [shape=box,fixedsize=true,width=2];",  
         for int_bid in self.bin2Assignments.keys():
-            # add the prefix "GroopM_" here
-            print "        GroopM_%s;" % self.getStringID(int_bid),
+            print "        %s;" % self.getStringID(int_bid),
         print   
         print "    }"
         
         for b_key in self.bin2BinLinkCounts:
             (k1, k2) = self.splitLinkKey(b_key)
             if k1 != 0 and k2 != 0:
-                # add the prefix "GroopM_" here too
-                s1 = self.getStringID(k1)
-                s2 = self.getStringID(k2)
-                if s1[0] == 'C':
-                    s2 = "GroopM_" + s2
-                else:
-                    s1 = "GroopM_" + s1
-                print "    %s -- %s [penwidth=%0.4f];" % (s1,
-                                                          s2,
+                print "    %s -- %s [penwidth=%0.4f];" % (self.getStringID(k1),
+                                                          self.getStringID(k2),
                                                           perc_save[b_key] * reducto)
         print "};"
         
